@@ -25,6 +25,7 @@ export function GameRoom({ gameId }: { gameId: string }) {
   const [data, setData] = useState<GameView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [aiDifficulty, setAiDifficulty] = useState("medium");
   const busyRef = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -66,12 +67,16 @@ export function GameRoom({ gameId }: { gameId: string }) {
     };
   }, [gameId, refresh, pusherKey, pusherCluster]);
 
-  const post = async (path: string, body?: unknown): Promise<boolean> => {
+  const send = async (
+    method: "POST" | "DELETE",
+    path: string,
+    body?: unknown,
+  ): Promise<boolean> => {
     setBusy(true);
     busyRef.current = true;
     try {
       const res = await fetch(path, {
-        method: "POST",
+        method,
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body ?? {}),
       });
@@ -85,6 +90,8 @@ export function GameRoom({ gameId }: { gameId: string }) {
       busyRef.current = false;
     }
   };
+  const post = (path: string, body?: unknown) => send("POST", path, body);
+  const del = (path: string, body?: unknown) => send("DELETE", path, body);
 
   const onAction = async (action: Action): Promise<ActResult> => {
     busyRef.current = true;
@@ -147,10 +154,43 @@ export function GameRoom({ gameId }: { gameId: string }) {
           {data.players.map((p) => (
             <div className="player-chip" key={p.playerId}>
               <span className="swatch" style={{ background: `var(--${p.color}, #888)` }} />
+              {p.type === "ai" ? "🤖 " : ""}
               {p.displayName}
+              {data.youAreCreator && p.type === "ai" ? (
+                <button
+                  style={{ marginLeft: "auto", padding: "2px 8px" }}
+                  disabled={busy}
+                  onClick={() =>
+                    void del(`/api/games/${gameId}/ai`, { playerId: p.playerId }).then(
+                      (ok) => ok && void refresh(),
+                    )
+                  }
+                >
+                  ✕
+                </button>
+              ) : null}
             </div>
           ))}
           {error ? <p style={{ color: "var(--danger)" }}>{error}</p> : null}
+          {data.youAreCreator && data.players.length < data.maxPlayers ? (
+            <div className="row" style={{ marginTop: 10 }}>
+              <select value={aiDifficulty} onChange={(e) => setAiDifficulty(e.target.value)}>
+                <option value="easy">Easy bot</option>
+                <option value="medium">Medium bot</option>
+                <option value="hard">Hard bot</option>
+              </select>
+              <button
+                disabled={busy}
+                onClick={() =>
+                  void post(`/api/games/${gameId}/ai`, { difficulty: aiDifficulty }).then(
+                    (ok) => ok && void refresh(),
+                  )
+                }
+              >
+                + Add AI opponent
+              </button>
+            </div>
+          ) : null}
           <div className="row" style={{ marginTop: 12 }}>
             {!data.youJoined ? (
               <button

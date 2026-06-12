@@ -66,3 +66,11 @@ export { replayGame } from "./replay.js";
 
 // RNG (P4)
 export { createRng, shuffleInPlace, type Rng } from "./rng.js";
+
+// AI opponents (Spec §4.4)
+export {
+  BOT_DIFFICULTIES,
+  chooseBotAction,
+  targetContinent,
+  type BotDifficulty,
+} from "./ai/bot.js";

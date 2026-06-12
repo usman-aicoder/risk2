@@ -15,6 +15,13 @@
       "when": 1781289617324,
       "tag": "0001_far_corsair",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781292473217,
+      "tag": "0002_fat_screwball",
+      "breakpoints": true
     }
   ]
 }

@@ -19,10 +19,18 @@ export default async function HomePage() {
 
       <div className="panel">
         <h3>Play right now</h3>
-        <p className="muted">2–6 players sharing one device. No account needed.</p>
-        <a href="/play">
-          <button className="primary">Start a hot-seat game</button>
-        </a>
+        <p className="muted">
+          New to Risk? The tutorial walks you through one full turn. Hot-seat games support 2–6
+          humans and bots on one device. No account needed.
+        </p>
+        <div className="row">
+          <a href="/tutorial">
+            <button className="primary">Take the tutorial</button>
+          </a>
+          <a href="/play">
+            <button>Start a hot-seat game</button>
+          </a>
+        </div>
       </div>
 
       {session?.user ? (

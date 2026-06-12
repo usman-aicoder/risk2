@@ -9,8 +9,15 @@
  * on `version` guarantees two concurrent submissions can never fork it.
  */
 
-import type { Action, GameEvent, GameState, Objective, PlayerColor } from "@risk2/engine";
-import { applyAction, createGame } from "@risk2/engine";
+import type {
+  Action,
+  BotDifficulty,
+  GameEvent,
+  GameState,
+  Objective,
+  PlayerColor,
+} from "@risk2/engine";
+import { applyAction, chooseBotAction, createGame } from "@risk2/engine";
 import { and, eq, isNotNull, lt } from "drizzle-orm";
 import { after } from "next/server";
 import { getDb } from "@/db";
@@ -233,6 +240,108 @@ export async function createLobby(
   return { ok: true, data: { gameId: game.id, inviteCode: game.inviteCode } };
 }
 
+const BOT_NAMES = [
+  "General Patches",
+  "Marshal Byte",
+  "Colonel Crash",
+  "Major Loop",
+  "Captain Stack",
+];
+
+export async function addAiPlayer(
+  userId: string,
+  gameId: string,
+  difficulty: BotDifficulty,
+): Promise<ServiceResult<{ playerId: string }>> {
+  const db = getDb();
+  const game = await db.query.games.findFirst({
+    where: eq(games.id, gameId),
+    with: { players: true },
+  });
+  if (!game) return fail(404, "GAME_NOT_FOUND", "No such game.");
+  if (game.createdBy !== userId) return fail(403, "NOT_CREATOR", "Only the creator can add AI.");
+  if (game.status !== "lobby") return fail(409, "GAME_STARTED", "This game has already started.");
+  if (game.players.length >= game.maxPlayers) return fail(409, "GAME_FULL", "This game is full.");
+
+  const taken = new Set(game.players.map((p) => p.color));
+  const color = COLORS.find((c) => !taken.has(c)) as PlayerColor;
+  const botCount = game.players.filter((p) => p.type === "ai").length;
+  const playerId = `ai_${crypto.randomUUID().slice(0, 8)}`;
+  await db.insert(gamePlayers).values({
+    gameId,
+    userId: null,
+    playerId,
+    displayName: `${BOT_NAMES[botCount % BOT_NAMES.length] as string} (${difficulty})`,
+    color,
+    type: "ai",
+    aiDifficulty: difficulty,
+    turnOrder: game.players.length,
+  });
+  return { ok: true, data: { playerId } };
+}
+
+export async function removeAiPlayer(
+  userId: string,
+  gameId: string,
+  playerId: string,
+): Promise<ServiceResult<{ removed: true }>> {
+  const db = getDb();
+  const game = await db.query.games.findFirst({
+    where: eq(games.id, gameId),
+    with: { players: true },
+  });
+  if (!game) return fail(404, "GAME_NOT_FOUND", "No such game.");
+  if (game.createdBy !== userId) return fail(403, "NOT_CREATOR", "Only the creator can remove AI.");
+  if (game.status !== "lobby") return fail(409, "GAME_STARTED", "This game has already started.");
+  const bot = game.players.find((p) => p.playerId === playerId && p.type === "ai");
+  if (!bot) return fail(404, "NOT_A_BOT", "No such AI player in this lobby.");
+
+  await db.delete(gamePlayers).where(eq(gamePlayers.id, bot.id));
+  // Compact turn order so seating stays contiguous.
+  const remaining = game.players
+    .filter((p) => p.id !== bot.id)
+    .sort((a, b) => a.turnOrder - b.turnOrder);
+  for (let i = 0; i < remaining.length; i++) {
+    const row = remaining[i];
+    if (row && row.turnOrder !== i) {
+      await db.update(gamePlayers).set({ turnOrder: i }).where(eq(gamePlayers.id, row.id));
+    }
+  }
+  return { ok: true, data: { removed: true } };
+}
+
+/**
+ * Play AI turns server-side until a human is up or the game ends (Spec §4.4).
+ * Each bot action flows through the same engine validate/apply + persist
+ * pipeline as human moves — logged, replayable, fair (P4).
+ */
+export async function runAiTurns(gameId: string): Promise<void> {
+  const db = getDb();
+  for (let step = 0; step < 400; step++) {
+    const game = await db.query.games.findFirst({
+      where: eq(games.id, gameId),
+      with: { players: true },
+    });
+    if (!game || game.status !== "active" || !game.snapshot) return;
+    const current = game.players.find((p) => p.playerId === game.snapshot?.currentTurnPlayer);
+    if (!current || current.type !== "ai") return;
+
+    const action = chooseBotAction(
+      game.snapshot,
+      current.playerId,
+      current.aiDifficulty ?? "medium",
+    );
+    const result = applyAction(game.snapshot, current.playerId, action);
+    if (!result.ok) {
+      console.error(`AI proposed illegal action in ${gameId}: ${result.code}`);
+      return;
+    }
+    const persisted = await persistApplied(game, game.snapshot, result.state);
+    if (!persisted.ok) return; // concurrent write — the other writer continues
+  }
+  console.error(`AI turn runner hit its bound in ${gameId}`);
+}
+
 export async function joinGame(
   userId: string,
   gameId: string,
@@ -328,6 +437,7 @@ export async function startGame(
       turnNumber: state.turnNumber,
     });
     await notifyAfterTurnChange(gameId, state, false);
+    await runAiTurns(gameId);
   });
 
   return { ok: true, data: { gameId } };
@@ -356,6 +466,9 @@ export async function performAction(
 
   const persisted = await persistApplied(game, game.snapshot, result.state);
   if (!persisted.ok) return persisted;
+
+  // If the turn moved on to a bot, let it play after the response (P2).
+  if (persisted.data.turnChanged) runAfter(() => runAiTurns(gameId));
 
   return {
     ok: true,
@@ -415,7 +528,10 @@ export async function autoSkipTurn(gameId: string): Promise<ServiceResult<{ acti
 
     const persisted = await persistApplied(game, game.snapshot, result.state);
     if (!persisted.ok) return persisted;
-    if (persisted.data.turnChanged) return { ok: true, data: { actions: step + 1 } };
+    if (persisted.data.turnChanged) {
+      runAfter(() => runAiTurns(gameId)); // the next seat may be a bot
+      return { ok: true, data: { actions: step + 1 } };
+    }
   }
   return fail(500, "SKIP_OVERRUN", "Auto-skip did not finish the turn in bounds.");
 }

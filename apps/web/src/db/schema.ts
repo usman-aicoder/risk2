@@ -141,6 +141,8 @@ export const gamePlayers = pgTable(
     type: text("type", { enum: ["human", "ai"] })
       .notNull()
       .default("human"),
+    /** Bot tier; null for humans. */
+    aiDifficulty: text("ai_difficulty", { enum: ["easy", "medium", "hard"] }),
     turnOrder: integer("turn_order").notNull(),
     joinedAt: timestamp("joined_at").notNull().defaultNow(),
   },

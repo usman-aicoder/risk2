@@ -24,6 +24,7 @@ import { PLAYER_COLOR_HEX } from "@/lib/mapLayout";
 import type { PlayerView, RedactedLogEntry } from "@/lib/redact";
 import type { Highlight } from "./GameBoard";
 import { GameBoard } from "./GameBoard";
+import { RulesReference } from "./RulesReference";
 
 export interface ActResult {
   ok: boolean;
@@ -276,8 +277,9 @@ export function GameClient({ view, onAction, banner, onRestart }: GameClientProp
 
       <div className="sidebar">
         {banner}
-        <div className="hud-banner">
+        <div className="hud-banner row" style={{ justifyContent: "space-between" }}>
           <PhaseStepper phase={view.phase} />
+          <RulesReference />
         </div>
 
         <div className="hud-section">

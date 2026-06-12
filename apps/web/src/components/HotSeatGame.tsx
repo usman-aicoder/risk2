@@ -2,13 +2,13 @@
 
 /**
  * Hot-seat play: the full engine runs in the browser, the device is passed
- * around, and each player sees their own redacted view. No account or
- * network needed — also the quickest way to playtest the rules end to end.
+ * around, and each player sees their own redacted view. Seats can be humans
+ * or AI bots (Spec §4.4) — bots play automatically with a short delay.
  */
 
-import type { Action, GameState, PlayerColor } from "@risk2/engine";
-import { applyAction, createGame } from "@risk2/engine";
-import { useRef, useState } from "react";
+import type { Action, BotDifficulty, GameState, PlayerColor } from "@risk2/engine";
+import { applyAction, chooseBotAction, createGame } from "@risk2/engine";
+import { useEffect, useRef, useState } from "react";
 import { PLAYER_COLOR_HEX } from "@/lib/mapLayout";
 import { redactState } from "@/lib/redact";
 import type { ActResult } from "./GameClient";
@@ -16,45 +16,92 @@ import { GameClient } from "./GameClient";
 
 const COLORS: PlayerColor[] = ["red", "blue", "green", "yellow", "purple", "black"];
 
-export function HotSeatGame() {
-  const [names, setNames] = useState<string[]>(["Player 1", "Player 2"]);
+type SeatKind = "human" | BotDifficulty;
+
+interface Seat {
+  name: string;
+  kind: SeatKind;
+}
+
+export interface HotSeatGameProps {
+  /** Preset seats + seed for the tutorial; omit for the normal setup form. */
+  preset?: { seats: Seat[]; seed: number };
+  banner?: (state: GameState) => React.ReactNode;
+}
+
+export function HotSeatGame({ preset, banner }: HotSeatGameProps) {
+  const [seats, setSeats] = useState<Seat[]>(
+    preset?.seats ?? [
+      { name: "Player 1", kind: "human" },
+      { name: "Player 2", kind: "human" },
+    ],
+  );
   const [state, setState] = useState<GameState | null>(null);
-  // Sequentially submitted actions (e.g. confirming several staged
-  // placements) must each apply to the latest state, not a stale closure.
+  // Sequential submissions (e.g. several staged placements) must each apply
+  // to the latest state, not a stale closure.
   const stateRef = useRef<GameState | null>(null);
+  const difficulties = useRef<Map<string, BotDifficulty>>(new Map());
 
   const setGame = (next: GameState | null) => {
     stateRef.current = next;
     setState(next);
   };
 
-  const start = () => {
-    const seed = Math.floor(Math.random() * 0xffffffff) >>> 0;
+  const start = (config: Seat[], seed: number) => {
+    difficulties.current = new Map(
+      config.map((seat, i) => [`p${i}`, seat.kind === "human" ? "easy" : seat.kind]),
+    );
     setGame(
       createGame({
         gameId: "hotseat",
         mode: "live",
         rngSeed: seed,
-        players: names.map((name, i) => ({
+        players: config.map((seat, i) => ({
           id: `p${i}`,
-          name: name.trim() || `Player ${i + 1}`,
+          name: seat.name.trim() || `Player ${i + 1}`,
           color: COLORS[i] as PlayerColor,
-          type: "human",
+          type: seat.kind === "human" ? "human" : "ai",
         })),
       }),
     );
   };
 
+  const presetStarted = useRef(false);
+  useEffect(() => {
+    if (preset && !presetStarted.current) {
+      presetStarted.current = true;
+      start(preset.seats, preset.seed);
+    }
+  });
+
+  // Bots take their turns automatically, one action at a time.
+  useEffect(() => {
+    if (!state || state.phase === "gameOver") return;
+    const current = state.players.find((p) => p.playerId === state.currentTurnPlayer);
+    if (current?.type !== "ai") return;
+    const timer = setTimeout(() => {
+      const latest = stateRef.current;
+      if (!latest || latest.phase === "gameOver") return;
+      const difficulty = difficulties.current.get(latest.currentTurnPlayer) ?? "medium";
+      const action = chooseBotAction(latest, latest.currentTurnPlayer, difficulty);
+      const result = applyAction(latest, latest.currentTurnPlayer, action);
+      if (result.ok) setGame(result.state);
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [state]);
+
   if (!state) {
+    if (preset) return null; // starting via effect
     return (
       <main className="page">
         <h1>Hot-seat game</h1>
-        <p className="muted">2–6 players on one device. Pass it around between turns.</p>
+        <p className="muted">
+          2–6 players on one device — humans pass it around; bots play themselves.
+        </p>
         <div className="panel">
-          {names.map((name, i) => (
+          {seats.map((seat, i) => (
             <div className="row" key={i} style={{ marginBottom: 8 }}>
               <span
-                className="swatch"
                 style={{
                   width: 14,
                   height: 14,
@@ -63,22 +110,45 @@ export function HotSeatGame() {
                 }}
               />
               <input
-                value={name}
-                onChange={(e) => setNames((n) => n.map((v, j) => (j === i ? e.target.value : v)))}
+                value={seat.name}
+                onChange={(e) =>
+                  setSeats((all) =>
+                    all.map((s, j) => (j === i ? { ...s, name: e.target.value } : s)),
+                  )
+                }
               />
-              {names.length > 2 && i === names.length - 1 ? (
-                <button onClick={() => setNames((n) => n.slice(0, -1))}>Remove</button>
+              <select
+                value={seat.kind}
+                onChange={(e) =>
+                  setSeats((all) =>
+                    all.map((s, j) => (j === i ? { ...s, kind: e.target.value as SeatKind } : s)),
+                  )
+                }
+              >
+                <option value="human">Human</option>
+                <option value="easy">Easy bot</option>
+                <option value="medium">Medium bot</option>
+                <option value="hard">Hard bot</option>
+              </select>
+              {seats.length > 2 && i === seats.length - 1 ? (
+                <button onClick={() => setSeats((all) => all.slice(0, -1))}>Remove</button>
               ) : null}
             </div>
           ))}
           <div className="row" style={{ marginTop: 12 }}>
             <button
-              disabled={names.length >= 6}
-              onClick={() => setNames((n) => [...n, `Player ${n.length + 1}`])}
+              disabled={seats.length >= 6}
+              onClick={() =>
+                setSeats((all) => [...all, { name: `Player ${all.length + 1}`, kind: "medium" }])
+              }
             >
               + Add player
             </button>
-            <button className="primary" onClick={start}>
+            <button
+              className="primary"
+              disabled={!seats.some((s) => s.kind === "human")}
+              onClick={() => start(seats, Math.floor(Math.random() * 0xffffffff) >>> 0)}
+            >
               Start game
             </button>
           </div>
@@ -91,7 +161,9 @@ export function HotSeatGame() {
   }
 
   const current = state.players.find((p) => p.playerId === state.currentTurnPlayer);
-  const view = redactState(state, state.currentTurnPlayer);
+  const currentIsBot = current?.type === "ai";
+  // Bots get no controls: spectate while they think.
+  const view = redactState(state, currentIsBot ? null : state.currentTurnPlayer);
 
   const onAction = (action: Action): Promise<ActResult> => {
     const latest = stateRef.current ?? state;
@@ -109,14 +181,16 @@ export function HotSeatGame() {
       onAction={onAction}
       onRestart={() => setGame(null)}
       banner={
-        <div
-          className="hud-banner"
-          style={{
-            borderLeft: `6px solid ${PLAYER_COLOR_HEX[current?.color ?? "black"]}`,
-          }}
-        >
-          {current?.displayName}&apos;s turn — pass the device!
-        </div>
+        banner?.(state) ?? (
+          <div
+            className="hud-banner"
+            style={{ borderLeft: `6px solid ${PLAYER_COLOR_HEX[current?.color ?? "black"]}` }}
+          >
+            {currentIsBot
+              ? `🤖 ${current?.displayName} is thinking…`
+              : `${current?.displayName}'s turn — pass the device!`}
+          </div>
+        )
       }
     />
   );

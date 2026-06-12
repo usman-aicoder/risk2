@@ -53,4 +53,12 @@ export const joinGameSchema = z.object({
   inviteCode: z.string().min(1).max(32).optional(),
 });
 
+export const addAiSchema = z.object({
+  difficulty: z.enum(["easy", "medium", "hard"]).default("medium"),
+});
+
+export const removeAiSchema = z.object({
+  playerId: z.string().min(1).max(64),
+});
+
 export type CreateGameInput = z.infer<typeof createGameSchema>;
