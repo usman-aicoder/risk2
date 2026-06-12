@@ -6,8 +6,7 @@
 
 import { applyAction } from "../src/apply.js";
 import type { Action } from "../src/actions.js";
-import { isValidSet } from "../src/cards.js";
-import type { Card } from "../src/cards.js";
+import { findTradeableSet } from "../src/cards.js";
 import { ADJACENCY, TERRITORY_CODES } from "../src/map.js";
 import { ownedTerritories } from "../src/rules.js";
 import { createRng } from "../src/rng.js";
@@ -32,18 +31,6 @@ export function simConfig(seed: number, playerCount = 3): GameConfig {
   };
 }
 
-function findValidSet(cards: readonly Card[]): Card[] | null {
-  for (let i = 0; i < cards.length; i++) {
-    for (let j = i + 1; j < cards.length; j++) {
-      for (let k = j + 1; k < cards.length; k++) {
-        const set = [cards[i] as Card, cards[j] as Card, cards[k] as Card];
-        if (isValidSet(set)) return set;
-      }
-    }
-  }
-  return null;
-}
-
 function pick<T>(items: readonly T[], rng: Rng): T {
   return items[Math.floor(rng.next() * items.length)] as T;
 }
@@ -62,7 +49,7 @@ export function pickBotAction(s: GameState, rng: Rng): Action {
 
   if (s.phase === "reinforce") {
     if (player.cards.length >= FORCED_TRADE_HAND_SIZE) {
-      const set = findValidSet(player.cards);
+      const set = findTradeableSet(player.cards);
       if (!set) throw new Error("5+ cards must always contain a valid set");
       return { type: "tradeCards", cardIds: set.map((c) => c.id) };
     }

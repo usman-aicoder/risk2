@@ -20,8 +20,11 @@
     "drizzle-orm": "^0.44.2",
     "next": "^15.3.4",
     "next-auth": "beta",
+    "pusher": "^5.3.4",
+    "pusher-js": "^8.5.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "web-push": "^3.6.7",
     "zod": "^3.25.67"
   },
   "devDependencies": {
@@ -30,6 +33,7 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/web-push": "^3.6.4",
     "drizzle-kit": "^0.31.1",
     "jsdom": "^29.1.1",
     "vitest": "^4.1.8"

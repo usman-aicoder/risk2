@@ -37,11 +37,34 @@ export function GameRoom({ gameId }: { gameId: string }) {
     setData((await res.json()) as GameView);
   }, [gameId]);
 
+  // Realtime: subscribe to the game's Pusher channel and refetch the
+  // redacted view on every "update" signal (P2). Falls back to fast polling
+  // when realtime is not configured.
+  const pusherKey = process.env.NEXT_PUBLIC_PUSHER_KEY;
+  const pusherCluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER;
+
   useEffect(() => {
     void refresh();
-    const interval = setInterval(() => void refresh(), 5000);
+    const interval = setInterval(() => void refresh(), pusherKey ? 60_000 : 5_000);
     return () => clearInterval(interval);
-  }, [refresh]);
+  }, [refresh, pusherKey]);
+
+  useEffect(() => {
+    if (!pusherKey || !pusherCluster) return;
+    let disconnect = () => {};
+    let cancelled = false;
+    void import("pusher-js").then(({ default: Pusher }) => {
+      if (cancelled) return;
+      const pusher = new Pusher(pusherKey, { cluster: pusherCluster });
+      const channel = pusher.subscribe(`game-${gameId}`);
+      channel.bind("update", () => void refresh());
+      disconnect = () => pusher.disconnect();
+    });
+    return () => {
+      cancelled = true;
+      disconnect();
+    };
+  }, [gameId, refresh, pusherKey, pusherCluster]);
 
   const post = async (path: string, body?: unknown): Promise<boolean> => {
     setBusy(true);

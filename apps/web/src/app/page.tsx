@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import { EnableNotifications } from "@/components/EnableNotifications";
 import { CreateGameForm, MyGames } from "@/components/Home";
 
 export default async function HomePage() {
@@ -28,6 +29,7 @@ export default async function HomePage() {
         <>
           <CreateGameForm />
           <MyGames />
+          <EnableNotifications />
         </>
       ) : (
         <div className="panel">

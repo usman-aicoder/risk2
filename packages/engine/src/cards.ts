@@ -63,6 +63,22 @@ export function tradeValue(setNumber: number): number {
 }
 
 /**
+ * First valid set in a hand, or null. With 5+ cards a set always exists
+ * (pigeonhole over the three designs, wilds only help).
+ */
+export function findTradeableSet(cards: readonly Card[]): Card[] | null {
+  for (let i = 0; i < cards.length; i++) {
+    for (let j = i + 1; j < cards.length; j++) {
+      for (let k = j + 1; k < cards.length; k++) {
+        const set = [cards[i] as Card, cards[j] as Card, cards[k] as Card];
+        if (isValidSet(set)) return set;
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Draw the top card, reshuffling the discard pile (with the seeded RNG) when
  * the draw pile is empty. Returns null only when every card is held by players.
  */

@@ -42,6 +42,7 @@ describe("createGameSchema", () => {
       maxPlayers: 6,
       isPrivate: false,
       objective: { kind: "domination" },
+      turnDurationHours: 48,
     });
   });
 

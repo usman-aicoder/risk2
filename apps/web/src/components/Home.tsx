@@ -94,8 +94,22 @@ export function MyGames() {
                   ? "your turn!"
                   : `turn ${g.turnNumber ?? "?"}`}
           </span>
+          {g.status === "active" && g.isYourTurn && g.turnDeadline ? (
+            <span className="muted" style={{ fontSize: 12 }}>
+              auto-skips {formatDeadline(g.turnDeadline)}
+            </span>
+          ) : null}
         </div>
       ))}
     </div>
   );
+}
+
+function formatDeadline(iso: string): string {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return "any moment now";
+  const hours = Math.floor(ms / 3_600_000);
+  if (hours >= 48) return `in ${Math.floor(hours / 24)} days`;
+  if (hours >= 1) return `in ${hours}h`;
+  return `in ${Math.max(1, Math.floor(ms / 60_000))}m`;
 }

@@ -113,6 +113,10 @@ export const games = pgTable(
     currentTurnPlayer: text("current_turn_player"),
     turnNumber: integer("turn_number"),
     winner: text("winner"),
+    /** Async games: hours each player has to act before auto-skip (P2). */
+    turnDurationHours: integer("turn_duration_hours").notNull().default(48),
+    /** When the current turn auto-skips; null in lobby/finished games. */
+    turnDeadline: timestamp("turn_deadline", { mode: "date" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -163,6 +167,24 @@ export const actionLog = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [uniqueIndex("action_log_game_seq").on(table.gameId, table.seq)],
+);
+
+/** Web Push subscriptions for the "your turn" loop (P2). */
+export const pushSubscriptions = pgTable(
+  "push_subscription",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("push_subscription_endpoint").on(table.endpoint)],
 );
 
 export const gamesRelations = relations(games, ({ many }) => ({

@@ -35,6 +35,7 @@ export { type GameEvent } from "./events.js";
 export {
   buildDeck,
   drawCard,
+  findTradeableSet,
   isValidSet,
   tradeValue,
   type Card,

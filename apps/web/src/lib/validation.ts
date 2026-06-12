@@ -45,6 +45,8 @@ export const createGameSchema = z.object({
   maxPlayers: z.number().int().min(2).max(6).default(6),
   isPrivate: z.boolean().default(false),
   objective: objectiveSchema.default({ kind: "domination" }),
+  /** Async turn clock before auto-skip (P2); 1 hour to 1 week. */
+  turnDurationHours: z.number().int().min(1).max(168).default(48),
 });
 
 export const joinGameSchema = z.object({

@@ -2,19 +2,24 @@
  * Game service: lobby lifecycle and the authoritative action pipeline (P4)
  *
  *   load snapshot -> engine validate/apply -> persist (optimistic
- *   concurrency on version) -> append action_log row
+ *   concurrency on version) -> append action_log row -> publish realtime
+ *   signal + notify the next player (P2)
  *
  * The engine snapshot is the single source of truth; the conditional UPDATE
  * on `version` guarantees two concurrent submissions can never fork it.
  */
 
-import type { Action, GameEvent, Objective, PlayerColor } from "@risk2/engine";
+import type { Action, GameEvent, GameState, Objective, PlayerColor } from "@risk2/engine";
 import { applyAction, createGame } from "@risk2/engine";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull, lt } from "drizzle-orm";
+import { after } from "next/server";
 import { getDb } from "@/db";
 import { actionLog, gamePlayers, games, users } from "@/db/schema";
+import { notifyUser } from "./notify";
+import { publishGameUpdate } from "./realtime";
 import type { PlayerView } from "./redact";
 import { redactState } from "./redact";
+import { MAX_SKIP_ACTIONS, nextSkipAction } from "./skip";
 
 export type ServiceResult<T> =
   | { ok: true; data: T }
@@ -35,6 +40,7 @@ export interface GameSummary {
   winner: string | null;
   isPrivate: boolean;
   maxPlayers: number;
+  turnDeadline: string | null;
   players: { playerId: string; displayName: string; color: string; type: "human" | "ai" }[];
   updatedAt: string;
 }
@@ -56,12 +62,135 @@ export interface LobbyView {
 
 export type GameView =
   | LobbyView
-  | { gameId: string; status: "active" | "finished"; view: PlayerView };
+  | {
+      gameId: string;
+      status: "active" | "finished";
+      turnDeadline: string | null;
+      view: PlayerView;
+    };
 
 function randomSeed(): number {
   const buf = new Uint32Array(1);
   crypto.getRandomValues(buf);
   return (buf[0] as number) >>> 0;
+}
+
+/** Run side effects after the response when possible; never fail the action. */
+function runAfter(effect: () => Promise<void>): void {
+  const safe = () => effect().catch((error: unknown) => console.error("after-effect", error));
+  try {
+    after(safe);
+  } catch {
+    void safe();
+  }
+}
+
+type GameRow = typeof games.$inferSelect;
+
+function deadlineFor(
+  row: Pick<GameRow, "mode" | "turnDurationHours">,
+  state: GameState,
+): Date | null {
+  if (state.phase === "gameOver") return null;
+  if (row.mode !== "async") return null; // live games use table timers (later)
+  return new Date(Date.now() + row.turnDurationHours * 3600 * 1000);
+}
+
+/**
+ * Persist an engine-applied action with optimistic concurrency and fire the
+ * async-layer effects (realtime signal; notification when the turn moved to
+ * a different human player).
+ */
+async function persistApplied(
+  row: GameRow,
+  previous: GameState,
+  state: GameState,
+): Promise<ServiceResult<{ turnChanged: boolean }>> {
+  const db = getDb();
+  const finished = state.phase === "gameOver";
+  const turnChanged = state.currentTurnPlayer !== previous.currentTurnPlayer || finished;
+
+  const updated = await db
+    .update(games)
+    .set({
+      snapshot: state,
+      version: row.version + 1,
+      currentTurnPlayer: state.currentTurnPlayer,
+      turnNumber: state.turnNumber,
+      status: finished ? "finished" : "active",
+      winner: state.winner,
+      turnDeadline: turnChanged ? deadlineFor(row, state) : row.turnDeadline,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(games.id, row.id), eq(games.version, row.version)))
+    .returning({ id: games.id });
+  if (updated.length === 0) {
+    return fail(409, "VERSION_CONFLICT", "Another action was applied first; reload and retry.");
+  }
+
+  const entry = state.log[state.log.length - 1];
+  if (entry) {
+    await db.insert(actionLog).values({
+      gameId: row.id,
+      seq: entry.seq,
+      playerId: entry.playerId,
+      action: entry.action,
+      events: entry.events,
+    });
+  }
+
+  runAfter(async () => {
+    await publishGameUpdate(row.id, {
+      version: row.version + 1,
+      status: finished ? "finished" : "active",
+      currentTurnPlayer: state.currentTurnPlayer,
+      turnNumber: state.turnNumber,
+    });
+    if (turnChanged) await notifyAfterTurnChange(row.id, state, finished);
+  });
+
+  return { ok: true, data: { turnChanged } };
+}
+
+async function notifyAfterTurnChange(
+  gameId: string,
+  state: GameState,
+  finished: boolean,
+): Promise<void> {
+  const db = getDb();
+  const members = await db.query.gamePlayers.findMany({
+    where: eq(gamePlayers.gameId, gameId),
+  });
+  const label = `Game ${gameId.slice(0, 8)}`;
+
+  if (finished) {
+    const winnerName =
+      state.players.find((p) => p.playerId === state.winner)?.displayName ?? "Someone";
+    await Promise.all(
+      members
+        .filter((m) => m.userId !== null)
+        .map((m) =>
+          notifyUser({
+            userId: m.userId as string,
+            gameId,
+            gameLabel: label,
+            title: "Game over — Risk II Online",
+            body: `${winnerName} won the game.`,
+          }),
+        ),
+    );
+    return;
+  }
+
+  const next = members.find((m) => m.playerId === state.currentTurnPlayer);
+  if (!next?.userId) return; // AI or unknown — nothing to notify
+  await notifyUser({
+    userId: next.userId,
+    gameId,
+    gameLabel: label,
+    title: "Your turn — Risk II Online",
+    body: `It's your move (turn ${state.turnNumber}). You have time — async games wait for you.`,
+  });
 }
 
 export async function createLobby(
@@ -71,6 +200,7 @@ export async function createLobby(
     maxPlayers: number;
     isPrivate: boolean;
     objective: Objective;
+    turnDurationHours: number;
   },
 ): Promise<ServiceResult<{ gameId: string; inviteCode: string }>> {
   const db = getDb();
@@ -85,6 +215,7 @@ export async function createLobby(
       maxPlayers: input.maxPlayers,
       isPrivate: input.isPrivate,
       objective: input.objective,
+      turnDurationHours: input.turnDurationHours,
     })
     .returning({ id: games.id, inviteCode: games.inviteCode });
   if (!game) return fail(500, "DB_ERROR", "Could not create the game.");
@@ -182,11 +313,22 @@ export async function startGame(
       version: game.version + 1,
       currentTurnPlayer: state.currentTurnPlayer,
       turnNumber: state.turnNumber,
+      turnDeadline: deadlineFor(game, state),
       updatedAt: new Date(),
     })
     .where(and(eq(games.id, gameId), eq(games.version, game.version)))
     .returning({ id: games.id });
   if (updated.length === 0) return fail(409, "CONFLICT", "The game changed; try again.");
+
+  runAfter(async () => {
+    await publishGameUpdate(gameId, {
+      version: game.version + 1,
+      status: "active",
+      currentTurnPlayer: state.currentTurnPlayer,
+      turnNumber: state.turnNumber,
+    });
+    await notifyAfterTurnChange(gameId, state, false);
+  });
 
   return { ok: true, data: { gameId } };
 }
@@ -211,40 +353,71 @@ export async function performAction(
   // The engine enforces phase, turn, and rules (P1/P4).
   const result = applyAction(game.snapshot, membership.playerId, action);
   if (!result.ok) return fail(422, result.code, result.message);
-  const state = result.state;
 
-  const updated = await db
-    .update(games)
-    .set({
-      snapshot: state,
-      version: game.version + 1,
-      currentTurnPlayer: state.currentTurnPlayer,
-      turnNumber: state.turnNumber,
-      status: state.phase === "gameOver" ? "finished" : "active",
-      winner: state.winner,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(games.id, gameId), eq(games.version, game.version)))
-    .returning({ id: games.id });
-  if (updated.length === 0) {
-    return fail(409, "VERSION_CONFLICT", "Another action was applied first; reload and retry.");
-  }
-
-  const entry = state.log[state.log.length - 1];
-  if (entry) {
-    await db.insert(actionLog).values({
-      gameId,
-      seq: entry.seq,
-      playerId: entry.playerId,
-      action: entry.action,
-      events: entry.events,
-    });
-  }
+  const persisted = await persistApplied(game, game.snapshot, result.state);
+  if (!persisted.ok) return persisted;
 
   return {
     ok: true,
-    data: { events: result.events, view: redactState(state, membership.playerId) },
+    data: { events: result.events, view: redactState(result.state, membership.playerId) },
   };
+}
+
+/**
+ * Deadline sweep (P2): auto-skip every active async game whose turn clock
+ * expired. Called by Vercel Cron. Each skipped turn is a sequence of neutral
+ * engine actions (see lib/skip.ts) persisted exactly like player moves.
+ */
+export async function sweepExpiredTurns(
+  now = new Date(),
+): Promise<ServiceResult<{ checked: number; skipped: string[] }>> {
+  const db = getDb();
+  const expired = await db.query.games.findMany({
+    where: and(
+      eq(games.status, "active"),
+      eq(games.mode, "async"),
+      isNotNull(games.turnDeadline),
+      lt(games.turnDeadline, now),
+    ),
+    columns: { id: true },
+    limit: 25,
+  });
+
+  const skipped: string[] = [];
+  for (const { id } of expired) {
+    const result = await autoSkipTurn(id);
+    if (result.ok) skipped.push(id);
+  }
+  return { ok: true, data: { checked: expired.length, skipped } };
+}
+
+/** Skip the current player's turn in one game via neutral engine actions. */
+export async function autoSkipTurn(gameId: string): Promise<ServiceResult<{ actions: number }>> {
+  const db = getDb();
+  for (let step = 0; step < MAX_SKIP_ACTIONS; step++) {
+    const game = await db.query.games.findFirst({ where: eq(games.id, gameId) });
+    if (!game || game.status !== "active" || !game.snapshot) {
+      return step > 0
+        ? { ok: true, data: { actions: step } }
+        : fail(409, "GAME_NOT_ACTIVE", "Not active.");
+    }
+    // The player may have acted between cron firing and now.
+    if (game.turnDeadline && game.turnDeadline.getTime() > Date.now()) {
+      return { ok: true, data: { actions: step } };
+    }
+
+    const action = nextSkipAction(game.snapshot);
+    if (!action) return { ok: true, data: { actions: step } };
+
+    const result = applyAction(game.snapshot, game.snapshot.currentTurnPlayer, action);
+    if (!result.ok)
+      return fail(500, result.code, `auto-skip produced an illegal action: ${result.message}`);
+
+    const persisted = await persistApplied(game, game.snapshot, result.state);
+    if (!persisted.ok) return persisted;
+    if (persisted.data.turnChanged) return { ok: true, data: { actions: step + 1 } };
+  }
+  return fail(500, "SKIP_OVERRUN", "Auto-skip did not finish the turn in bounds.");
 }
 
 export async function listMyGames(userId: string): Promise<ServiceResult<GameSummary[]>> {
@@ -265,6 +438,7 @@ export async function listMyGames(userId: string): Promise<ServiceResult<GameSum
         winner: game.winner,
         isPrivate: game.isPrivate,
         maxPlayers: game.maxPlayers,
+        turnDeadline: game.turnDeadline?.toISOString() ?? null,
         players: game.players
           .sort((a, b) => a.turnOrder - b.turnOrder)
           .map((p) => ({
@@ -329,6 +503,7 @@ export async function getGameView(
     data: {
       gameId: game.id,
       status: game.status,
+      turnDeadline: game.turnDeadline?.toISOString() ?? null,
       view: redactState(game.snapshot, me?.playerId ?? null),
     },
   };

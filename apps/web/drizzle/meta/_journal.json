@@ -8,6 +8,13 @@
       "when": 1781274533065,
       "tag": "0000_neat_magma",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1781289617324,
+      "tag": "0001_far_corsair",
+      "breakpoints": true
     }
   ]
 }
