@@ -46,3 +46,14 @@ export function createRng(seed: number, skip = 0): Rng {
     },
   };
 }
+
+/** Deterministic Fisher–Yates shuffle driven by the seeded RNG. */
+export function shuffleInPlace<T>(items: T[], rng: Rng): T[] {
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = Math.floor(rng.next() * (i + 1));
+    const tmp = items[i] as T;
+    items[i] = items[j] as T;
+    items[j] = tmp;
+  }
+  return items;
+}
