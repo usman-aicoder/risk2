@@ -32,3 +32,6 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      - name: Build web app
+        run: pnpm --filter @risk2/web build

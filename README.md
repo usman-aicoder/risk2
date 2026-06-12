@@ -6,10 +6,10 @@ phased plan and architecture.
 
 ## Workspace
 
-| Path              | What                                                           |
-| ----------------- | -------------------------------------------------------------- |
-| `packages/engine` | Pure, deterministic rules engine — no I/O (P1)                 |
-| `apps/web`        | Next.js app: UI, API, auth, async layer _(arrives in Phase 2)_ |
+| Path              | What                                                                       |
+| ----------------- | -------------------------------------------------------------------------- |
+| `packages/engine` | Pure, deterministic rules engine — no I/O (P1)                             |
+| `apps/web`        | Next.js app: authoritative API, Drizzle/Neon persistence, Auth.js (P2, P4) |
 
 ## Getting started
 
