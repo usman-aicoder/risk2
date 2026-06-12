@@ -10,14 +10,15 @@ Design & Functional Specification v2.0 · Schema & State Machine v2.0
 
 A faithful 1:1 online remake of Risk II for casual players, governed by four principles:
 
-| # | Principle | What it means for the build |
-|---|-----------|------------------------------|
-| P1 | Rules are sacred | Pure, deterministic TypeScript rules engine; 42 territories, 6 continents, exact dice odds, card escalation — exhaustively tested, never modified |
-| P2 | Async-first | Persistent games, take-your-turn-and-get-notified loop, "your games" dashboard, turn deadlines with auto-skip; optional live mode |
-| P3 | Progressive depth | Tutorial, legal-move highlighting, hints, fast-resolve combat, undo-within-phase |
-| P4 | Fair server | Authoritative server, seeded auditable RNG, server-side validation, replayable append-only action log |
+| #   | Principle         | What it means for the build                                                                                                                       |
+| --- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1  | Rules are sacred  | Pure, deterministic TypeScript rules engine; 42 territories, 6 continents, exact dice odds, card escalation — exhaustively tested, never modified |
+| P2  | Async-first       | Persistent games, take-your-turn-and-get-notified loop, "your games" dashboard, turn deadlines with auto-skip; optional live mode                 |
+| P3  | Progressive depth | Tutorial, legal-move highlighting, hints, fast-resolve combat, undo-within-phase                                                                  |
+| P4  | Fair server       | Authoritative server, seeded auditable RNG, server-side validation, replayable append-only action log                                             |
 
 Core game spec (P1, must match exactly):
+
 - **Map:** 42 territories, 6 continents, static symmetric adjacency graph with canonical sea bridges. Bonuses: Australia +2, S. America +2, Africa +3, Europe +5, N. America +5, Asia +7.
 - **Turn:** Reinforce → Attack → Fortify. Reinforcements = `max(3, floor(territories/3))` + continent bonuses + card trade-in.
 - **Combat:** up to 3 attacker dice vs 2 defender dice, highest-vs-highest, defender wins ties. On capture, move in ≥ dice rolled. Capture during turn → award one card.
@@ -33,17 +34,17 @@ The spec recommends Node + WebSockets + BullMQ + Docker. Vercel is serverless: n
 long-lived WebSocket servers, no resident BullMQ workers. Because the product is
 **async-first (P2)**, this is an easy adaptation rather than a compromise:
 
-| Spec recommendation | Vercel-native replacement | Notes |
-|---|---|---|
-| NestJS/Fastify server | **Next.js 15 (App Router) API routes / server actions** | One deployable, one language |
-| React + Vite client | **Next.js React frontend** (same app) | SSR for dashboard/lobby |
-| PostgreSQL + JSONB snapshot | **Neon Postgres** (Vercel marketplace) + Drizzle ORM | JSONB `GameState` snapshot + append-only `action_log`, exactly as the schema doc defines |
-| Redis (cache/pub-sub/queue) | **Upstash Redis** (serverless, HTTP-based) | Sessions, matchmaking, rate limits |
-| BullMQ job queue | **Upstash QStash + Vercel Cron** | Turn-notification fan-out, turn-deadline auto-skip sweeps |
-| Socket.IO / ws | **Pusher Channels (or Ably)** for push diffs; SSE/polling fallback | Server publishes authoritative diffs after each action; clients only render (P4) |
-| Push + email notifications | **Web Push (VAPID) + Resend email** | The P2 "your turn" loop |
-| OAuth + magic link | **Auth.js (NextAuth v5)** — Google OAuth + email magic link | Low-friction sign-in (P3) |
-| Docker hosting | **Vercel** | Git-push deploys, preview deployments per PR |
+| Spec recommendation         | Vercel-native replacement                                          | Notes                                                                                    |
+| --------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| NestJS/Fastify server       | **Next.js 15 (App Router) API routes / server actions**            | One deployable, one language                                                             |
+| React + Vite client         | **Next.js React frontend** (same app)                              | SSR for dashboard/lobby                                                                  |
+| PostgreSQL + JSONB snapshot | **Neon Postgres** (Vercel marketplace) + Drizzle ORM               | JSONB `GameState` snapshot + append-only `action_log`, exactly as the schema doc defines |
+| Redis (cache/pub-sub/queue) | **Upstash Redis** (serverless, HTTP-based)                         | Sessions, matchmaking, rate limits                                                       |
+| BullMQ job queue            | **Upstash QStash + Vercel Cron**                                   | Turn-notification fan-out, turn-deadline auto-skip sweeps                                |
+| Socket.IO / ws              | **Pusher Channels (or Ably)** for push diffs; SSE/polling fallback | Server publishes authoritative diffs after each action; clients only render (P4)         |
+| Push + email notifications  | **Web Push (VAPID) + Resend email**                                | The P2 "your turn" loop                                                                  |
+| OAuth + magic link          | **Auth.js (NextAuth v5)** — Google OAuth + email magic link        | Low-friction sign-in (P3)                                                                |
+| Docker hosting              | **Vercel**                                                         | Git-push deploys, preview deployments per PR                                             |
 
 **Non-negotiables preserved:** the rules engine stays a pure, I/O-free TypeScript
 package; the server remains the single writer of game state; every dice roll comes
@@ -86,6 +87,7 @@ Set up monorepo, CI, and quality gates before any game code.
 - Branch protection on `main`; feature-branch → PR workflow
 
 **Install:**
+
 ```bash
 npm i -g pnpm
 pnpm init
@@ -97,7 +99,7 @@ pnpm add -D typescript vitest @vitest/coverage-v8 eslint prettier \
 
 ---
 
-### Phase 1 — Map data + pure rules engine (P1) — *the heart of the project*
+### Phase 1 — Map data + pure rules engine (P1) — _the heart of the project_
 
 Spec dev tasks 1–3. Zero I/O, zero dependencies beyond TypeScript — this package
 must run identically on server, client (for legal-move highlighting), and tests.
@@ -114,6 +116,7 @@ must run identically on server, client (for legal-move highlighting), and tests.
 **Install:** nothing new (Vitest from Phase 0).
 
 **Testing (this phase is test-heavy by design):**
+
 - Unit tests for every rule path (reinforcement math, adjacency symmetry, phase legality, card escalation table).
 - **Statistical combat tests:** simulate ≥1M dice battles and assert win probabilities match standard Risk odds tables within tolerance — the spec's literal definition of "faithful" (§6.1).
 - **Replay test:** replaying an action log + seed reproduces the identical final state bit-for-bit.
@@ -123,7 +126,7 @@ must run identically on server, client (for legal-move highlighting), and tests.
 pnpm add -D fast-check
 ```
 
-**Done when:** adjacency is symmetric, bonuses match source values, odds within tolerance, every battle replayable from its seed. *(Acceptance criteria from Spec §6.1.)*
+**Done when:** adjacency is symmetric, bonuses match source values, odds within tolerance, every battle replayable from its seed. _(Acceptance criteria from Spec §6.1.)_
 
 ---
 
@@ -138,6 +141,7 @@ Spec dev tasks 4–5. Next.js app with the server as single source of truth.
 5. **Read endpoints:** game state (redacted per viewer — opponents' cards hidden), action log, "your games" list.
 
 **Install:**
+
 ```bash
 pnpm add next react react-dom drizzle-orm @neondatabase/serverless zod \
   next-auth@beta resend
@@ -158,6 +162,7 @@ Spec dev task 7. The playable board.
 6. Lobby: create/join, public/private, invite links, mode/objective/player-count, add AI opponents.
 
 **Install:**
+
 ```bash
 pnpm add zustand @tanstack/react-query tailwindcss framer-motion
 pnpm add -D @testing-library/react @testing-library/jest-dom jsdom
@@ -167,17 +172,18 @@ pnpm add -D @testing-library/react @testing-library/jest-dom jsdom
 
 ---
 
-### Phase 4 — Async layer: notifications, deadlines, dashboard (P2) — *the key casual lever*
+### Phase 4 — Async layer: notifications, deadlines, dashboard (P2) — _the key casual lever_
 
 Spec dev task 6.
 
 1. **Realtime diffs:** Pusher Channels publish after every applied action; clients subscribe per game. Polling fallback.
-2. **Turn notifications:** on turn change, enqueue via QStash → Web Push + Resend email ("It's your turn in *Game X*").
+2. **Turn notifications:** on turn change, enqueue via QStash → Web Push + Resend email ("It's your turn in _Game X_").
 3. **"Your games" dashboard:** all active games, whose turn, deadline countdowns.
 4. **Turn deadlines with auto-skip:** Vercel Cron sweep (e.g. every 10 min) finds expired turns, applies a server-generated skip/auto-end action through the same engine pipeline (logged like any action, P4).
 5. Live mode (optional, same plumbing): per-turn timer, presence/spectators via Pusher presence channels, reconnection by re-fetching snapshot + diff replay.
 
 **Install:**
+
 ```bash
 pnpm add pusher pusher-js @upstash/qstash @upstash/redis web-push
 pnpm add -D @types/web-push
@@ -194,11 +200,11 @@ Spec dev tasks 8–9.
 1. **Interactive tutorial:** scripted one-turn walkthrough on a fixed-seed game; returning players skip.
 2. Contextual "what can I do now?" hints + one-tap rules reference.
 3. **AI bots** in the engine package, implementing the four strategy pillars with difficulty tiers:
-   - *Continent control* — pursue/lock continents (Australia/S. America first).
-   - *Defensible borders* — value territory by border count; avoid the Asia trap.
-   - *Stack discipline* — mass at chokepoints, don't spread thin.
-   - *Card tempo* — time explosive trade-in turns.
-   Difficulty scales heuristic weights + lookahead. Bots run server-side after a human turn (or via QStash for bot-vs-bot chains).
+   - _Continent control_ — pursue/lock continents (Australia/S. America first).
+   - _Defensible borders_ — value territory by border count; avoid the Asia trap.
+   - _Stack discipline_ — mass at chokepoints, don't spread thin.
+   - _Card tempo_ — time explosive trade-in turns.
+     Difficulty scales heuristic weights + lookahead. Bots run server-side after a human turn (or via QStash for bot-vs-bot chains).
 4. Match-end screen: summary, stats, one-tap rematch.
 
 **Install:** nothing new.
@@ -215,6 +221,7 @@ Spec dev tasks 8–9.
 4. Security pass: authz on every endpoint (only `currentTurnPlayer` can act), redaction of hidden info, rate limiting via Upstash.
 
 **Install:**
+
 ```bash
 pnpm add -D @playwright/test
 pnpm exec playwright install --with-deps chromium
@@ -239,16 +246,16 @@ pnpm exec playwright install --with-deps chromium
 
 ## 4. Consolidated dependency list
 
-| Purpose | Packages |
-|---|---|
-| Tooling | `pnpm`, `typescript`, `eslint`, `prettier`, `typescript-eslint` |
-| Engine (runtime) | *none — pure TS by design (P1)* |
-| Testing | `vitest`, `@vitest/coverage-v8`, `fast-check`, `@testing-library/react`, `jsdom`, `@playwright/test` |
-| Web framework | `next`, `react`, `react-dom` |
-| Data | `drizzle-orm`, `drizzle-kit`, `@neondatabase/serverless`, `zod` |
-| Auth | `next-auth@beta` (Auth.js v5) |
-| Async/realtime (P2) | `pusher`, `pusher-js`, `@upstash/qstash`, `@upstash/redis`, `web-push`, `resend` |
-| UI | `tailwindcss`, `zustand`, `@tanstack/react-query`, `framer-motion` |
+| Purpose             | Packages                                                                                             |
+| ------------------- | ---------------------------------------------------------------------------------------------------- |
+| Tooling             | `pnpm`, `typescript`, `eslint`, `prettier`, `typescript-eslint`                                      |
+| Engine (runtime)    | _none — pure TS by design (P1)_                                                                      |
+| Testing             | `vitest`, `@vitest/coverage-v8`, `fast-check`, `@testing-library/react`, `jsdom`, `@playwright/test` |
+| Web framework       | `next`, `react`, `react-dom`                                                                         |
+| Data                | `drizzle-orm`, `drizzle-kit`, `@neondatabase/serverless`, `zod`                                      |
+| Auth                | `next-auth@beta` (Auth.js v5)                                                                        |
+| Async/realtime (P2) | `pusher`, `pusher-js`, `@upstash/qstash`, `@upstash/redis`, `web-push`, `resend`                     |
+| UI                  | `tailwindcss`, `zustand`, `@tanstack/react-query`, `framer-motion`                                   |
 
 **External services to provision:** Vercel, Neon (Postgres), Upstash (Redis + QStash), Pusher, Resend, Google OAuth credentials.
 
@@ -256,16 +263,16 @@ pnpm exec playwright install --with-deps chromium
 
 ## 5. Testing strategy (cross-phase summary)
 
-| Level | What | When |
-|---|---|---|
-| Unit (Vitest) | Every engine rule path; map data integrity (symmetric adjacency, bonus values) | Phase 1 onward, every CI run |
-| Statistical | ≥1M simulated battles vs standard Risk odds tables within tolerance | Phase 1, nightly + release CI |
-| Property-based (fast-check) | Random legal action sequences preserve invariants | Phase 1 onward |
-| Replay | Seed + action log reproduces exact state (P4 acceptance) | Phase 1 onward |
-| Simulation | Thousands of full bot-vs-bot games terminate cleanly | Phase 5–6 |
-| Component (Testing Library) | Map interactions, phase HUD, legal-move highlights | Phase 3 onward |
-| E2E (Playwright) | Sign-in → lobby → full game → victory; async handoff; tutorial | Phase 6, on PRs |
-| Manual | Preview-deployment playtests per PR | Phase 7 onward |
+| Level                       | What                                                                           | When                          |
+| --------------------------- | ------------------------------------------------------------------------------ | ----------------------------- |
+| Unit (Vitest)               | Every engine rule path; map data integrity (symmetric adjacency, bonus values) | Phase 1 onward, every CI run  |
+| Statistical                 | ≥1M simulated battles vs standard Risk odds tables within tolerance            | Phase 1, nightly + release CI |
+| Property-based (fast-check) | Random legal action sequences preserve invariants                              | Phase 1 onward                |
+| Replay                      | Seed + action log reproduces exact state (P4 acceptance)                       | Phase 1 onward                |
+| Simulation                  | Thousands of full bot-vs-bot games terminate cleanly                           | Phase 5–6                     |
+| Component (Testing Library) | Map interactions, phase HUD, legal-move highlights                             | Phase 3 onward                |
+| E2E (Playwright)            | Sign-in → lobby → full game → victory; async handoff; tutorial                 | Phase 6, on PRs               |
+| Manual                      | Preview-deployment playtests per PR                                            | Phase 7 onward                |
 
 ## 6. Git & deployment workflow
 
@@ -276,14 +283,14 @@ pnpm exec playwright install --with-deps chromium
 
 ## 7. Suggested timeline
 
-| Phase | Effort |
-|---|---|
-| 0 — Scaffolding | 0.5 day |
-| 1 — Rules engine | 4–6 days |
-| 2 — Persistence + API | 3–4 days |
-| 3 — Client UI | 5–7 days |
-| 4 — Async layer | 3–4 days |
-| 5 — Onboarding + AI | 4–5 days |
-| 6 — E2E & hardening | 3 days |
-| 7 — Deploy & launch | 1–2 days |
-| **Total** | **~4–5 weeks** of focused development |
+| Phase                 | Effort                                |
+| --------------------- | ------------------------------------- |
+| 0 — Scaffolding       | 0.5 day                               |
+| 1 — Rules engine      | 4–6 days                              |
+| 2 — Persistence + API | 3–4 days                              |
+| 3 — Client UI         | 5–7 days                              |
+| 4 — Async layer       | 3–4 days                              |
+| 5 — Onboarding + AI   | 4–5 days                              |
+| 6 — E2E & hardening   | 3 days                                |
+| 7 — Deploy & launch   | 1–2 days                              |
+| **Total**             | **~4–5 weeks** of focused development |
