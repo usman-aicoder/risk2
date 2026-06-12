@@ -7,8 +7,12 @@ export default defineConfig({
       "@": path.resolve(import.meta.dirname, "src"),
     },
   },
+  // Next needs tsconfig "jsx": "preserve"; tests need JSX actually compiled.
+  oxc: {
+    jsx: { runtime: "automatic" },
+  },
   test: {
-    include: ["test/**/*.test.ts"],
+    include: ["test/**/*.test.{ts,tsx}"],
     environment: "node",
     coverage: {
       provider: "v8",
