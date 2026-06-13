@@ -61,7 +61,7 @@ Auth.js trusts the Vercel host automatically; no `AUTH_URL` needed.
 | **Pusher Channels** (realtime) | `PUSHER_APP_ID`, `PUSHER_KEY`, `PUSHER_SECRET`, `PUSHER_CLUSTER`, `NEXT_PUBLIC_PUSHER_KEY` (= key), `NEXT_PUBLIC_PUSHER_CLUSTER` (= cluster) | Create a Channels app at pusher.com. `NEXT_PUBLIC_*` are baked in at build time — set them before deploying. |
 | **Resend** (email) | `AUTH_RESEND_KEY`, `EMAIL_FROM` | `EMAIL_FROM` must be a verified sender, e.g. `Risk II <play@yourdomain.com>` (or `onboarding@resend.dev` for testing). Enables magic-link sign-in too. |
 | **Web Push** | `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | `npx web-push generate-vapid-keys`. Subject is `mailto:you@example.com`. |
-| **Cron protection** | `CRON_SECRET` | Any random string. Vercel Cron sends it automatically as `Authorization: Bearer …`. The deadline sweep (`apps/web/vercel.json`, every 10 min) auto-skips expired async turns. |
+| **Cron protection** | `CRON_SECRET` | Any random string. Vercel Cron sends it automatically as `Authorization: Bearer …`. The deadline sweep (`apps/web/vercel.json`) runs once daily — Vercel's **Hobby plan only allows daily cron**. Expired turns are also auto-skipped opportunistically whenever someone opens the game, so deadlines stay responsive without a Pro plan. (On Pro you can tighten the schedule, e.g. `*/10 * * * *`.) |
 | **Links in notifications** | `APP_URL` | `https://<your-domain>` |
 
 Set variables for **Production and Preview** so PR preview deployments are playable.

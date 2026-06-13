@@ -27,5 +27,12 @@ export default tseslint.config(
     files: ["**/*.{js,mjs,cjs}"],
     ...tseslint.configs.disableTypeChecked,
   },
+  {
+    // Node build/CLI scripts run outside the browser.
+    files: ["**/scripts/**/*.{js,mjs,cjs}"],
+    languageOptions: {
+      globals: { process: "readonly", console: "readonly" },
+    },
+  },
   prettier,
 );

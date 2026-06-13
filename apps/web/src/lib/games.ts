@@ -614,6 +614,21 @@ export async function getGameView(
   }
 
   if (!game.snapshot) return fail(500, "MISSING_SNAPSHOT", "Game state is missing.");
+
+  // Opportunistic deadline enforcement (P2): if this active async game's turn
+  // clock has expired, auto-skip it now rather than waiting for the daily cron
+  // sweep. The skip runs after the response; the viewer's next poll/realtime
+  // update reflects it. Keeps deadlines responsive on Vercel's Hobby plan,
+  // where cron is limited to once per day.
+  if (
+    game.status === "active" &&
+    game.mode === "async" &&
+    game.turnDeadline &&
+    game.turnDeadline.getTime() < Date.now()
+  ) {
+    runAfter(() => autoSkipTurn(gameId).then(() => undefined));
+  }
+
   return {
     ok: true,
     data: {
