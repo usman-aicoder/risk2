@@ -164,6 +164,9 @@ export function GameBoard({
           <g
             key={code}
             data-testid={`territory-${code}`}
+            data-highlight={highlight ?? undefined}
+            data-owner={t.owner}
+            data-troops={t.troops}
             role="button"
             aria-label={TERRITORY_NAMES[code]}
             style={{ cursor: onTerritoryClick ? "pointer" : "default" }}

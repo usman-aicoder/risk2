@@ -35,3 +35,38 @@ jobs:
 
       - name: Build web app
         run: pnpm --filter @risk2/web build
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm e2e:install
+
+      - name: Build web app
+        run: pnpm --filter @risk2/web build
+
+      - name: Run end-to-end tests
+        run: pnpm e2e
+        env:
+          # Test the real production build, started by Playwright's webServer.
+          E2E_SERVER_CMD: pnpm --filter @risk2/web start --port 3100
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

@@ -3,6 +3,9 @@ dist/
 coverage/
 .next/
 .vercel/
+playwright-report/
+test-results/
+blob-report/
 .env
 .env.local
 .env*.local

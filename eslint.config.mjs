@@ -11,6 +11,8 @@ export default tseslint.config(
       "**/node_modules/",
       "**/next-env.d.ts",
       "**/public/",
+      "playwright-report/",
+      "test-results/",
     ],
   },
   eslint.configs.recommended,

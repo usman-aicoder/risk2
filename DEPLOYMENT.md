@@ -5,13 +5,13 @@ migrations run automatically during the build whenever `DATABASE_URL` is set.
 
 ## What works with how much configuration
 
-| Configuration                          | What you get                                                                |
-| -------------------------------------- | --------------------------------------------------------------------------- |
-| Nothing at all                          | Landing page, `/tutorial`, `/play` hot-seat vs bots (engine runs in-browser) |
+| Configuration                           | What you get                                                                  |
+| --------------------------------------- | ----------------------------------------------------------------------------- |
+| Nothing at all                          | Landing page, `/tutorial`, `/play` hot-seat vs bots (engine runs in-browser)  |
 | `DATABASE_URL` + `AUTH_SECRET` + Google | Sign-in, online async games, AI opponents, deadlines + auto-skip (5s polling) |
-| + Pusher                                | Instant realtime updates instead of polling                                  |
-| + Resend                                | Magic-link sign-in + "your turn" emails                                      |
-| + VAPID keys                            | Browser push notifications                                                   |
+| + Pusher                                | Instant realtime updates instead of polling                                   |
+| + Resend                                | Magic-link sign-in + "your turn" emails                                       |
+| + VAPID keys                            | Browser push notifications                                                    |
 
 Everything degrades gracefully — missing services never break gameplay.
 
@@ -47,22 +47,22 @@ cd apps/web && DATABASE_URL="postgres://…" pnpm db:migrate
 
 ## Step 4 — Auth (required for online play)
 
-| Variable             | How to get it                                                                                                     |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `AUTH_SECRET`        | `openssl rand -base64 32`                                                                                           |
+| Variable                                | How to get it                                                                                                                                                             |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AUTH_SECRET`                           | `openssl rand -base64 32`                                                                                                                                                 |
 | `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → OAuth client (Web). Authorized redirect URI: `https://<your-domain>/api/auth/callback/google` |
 
 Auth.js trusts the Vercel host automatically; no `AUTH_URL` needed.
 
 ## Step 5 — Optional services
 
-| Service | Variables | Notes |
-| ------- | --------- | ----- |
-| **Pusher Channels** (realtime) | `PUSHER_APP_ID`, `PUSHER_KEY`, `PUSHER_SECRET`, `PUSHER_CLUSTER`, `NEXT_PUBLIC_PUSHER_KEY` (= key), `NEXT_PUBLIC_PUSHER_CLUSTER` (= cluster) | Create a Channels app at pusher.com. `NEXT_PUBLIC_*` are baked in at build time — set them before deploying. |
-| **Resend** (email) | `AUTH_RESEND_KEY`, `EMAIL_FROM` | `EMAIL_FROM` must be a verified sender, e.g. `Risk II <play@yourdomain.com>` (or `onboarding@resend.dev` for testing). Enables magic-link sign-in too. |
-| **Web Push** | `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | `npx web-push generate-vapid-keys`. Subject is `mailto:you@example.com`. |
-| **Cron protection** | `CRON_SECRET` | Any random string. Vercel Cron sends it automatically as `Authorization: Bearer …`. The deadline sweep (`apps/web/vercel.json`) runs once daily — Vercel's **Hobby plan only allows daily cron**. Expired turns are also auto-skipped opportunistically whenever someone opens the game, so deadlines stay responsive without a Pro plan. (On Pro you can tighten the schedule, e.g. `*/10 * * * *`.) |
-| **Links in notifications** | `APP_URL` | `https://<your-domain>` |
+| Service                        | Variables                                                                                                                                    | Notes                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Pusher Channels** (realtime) | `PUSHER_APP_ID`, `PUSHER_KEY`, `PUSHER_SECRET`, `PUSHER_CLUSTER`, `NEXT_PUBLIC_PUSHER_KEY` (= key), `NEXT_PUBLIC_PUSHER_CLUSTER` (= cluster) | Create a Channels app at pusher.com. `NEXT_PUBLIC_*` are baked in at build time — set them before deploying.                                                                                                                                                                                                                                                                                          |
+| **Resend** (email)             | `AUTH_RESEND_KEY`, `EMAIL_FROM`                                                                                                              | `EMAIL_FROM` must be a verified sender, e.g. `Risk II <play@yourdomain.com>` (or `onboarding@resend.dev` for testing). Enables magic-link sign-in too.                                                                                                                                                                                                                                                |
+| **Web Push**                   | `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`                                                                         | `npx web-push generate-vapid-keys`. Subject is `mailto:you@example.com`.                                                                                                                                                                                                                                                                                                                              |
+| **Cron protection**            | `CRON_SECRET`                                                                                                                                | Any random string. Vercel Cron sends it automatically as `Authorization: Bearer …`. The deadline sweep (`apps/web/vercel.json`) runs once daily — Vercel's **Hobby plan only allows daily cron**. Expired turns are also auto-skipped opportunistically whenever someone opens the game, so deadlines stay responsive without a Pro plan. (On Pro you can tighten the schedule, e.g. `*/10 * * * *`.) |
+| **Links in notifications**     | `APP_URL`                                                                                                                                    | `https://<your-domain>`                                                                                                                                                                                                                                                                                                                                                                               |
 
 Set variables for **Production and Preview** so PR preview deployments are playable.
 
