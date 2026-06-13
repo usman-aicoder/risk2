@@ -5,7 +5,7 @@
  */
 
 import type { ContinentCode, TerritoryCode } from "@risk2/engine";
-import { ADJACENCY, TERRITORY_CODES } from "@risk2/engine";
+import { ADJACENCY, CONTINENTS, CONTINENT_CODES, TERRITORY_CODES } from "@risk2/engine";
 
 export const MAP_WIDTH = 1080;
 export const MAP_HEIGHT = 560;
@@ -74,13 +74,86 @@ export const CONTINENT_LABELS: Record<ContinentCode, { x: number; y: number; lab
 };
 
 export const PLAYER_COLOR_HEX: Record<string, string> = {
-  red: "#c93b40",
-  blue: "#3e63dd",
-  green: "#3d8a4e",
-  yellow: "#c9a227",
-  purple: "#8e4ec6",
-  black: "#3c4150",
+  red: "#a4564f",
+  blue: "#4f6b8c",
+  green: "#5c7d58",
+  yellow: "#ad9656",
+  purple: "#7c6390",
+  black: "#454b5a",
 };
+
+/** Muted landmass styling for the world-map backdrop. */
+export const LAND_FILL = "#26313f";
+export const LAND_STROKE = "#36465a";
+
+interface Point {
+  x: number;
+  y: number;
+}
+
+/** Convex hull (Andrew's monotone chain), counter-clockwise. */
+function convexHull(points: Point[]): Point[] {
+  const pts = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  if (pts.length < 3) return pts;
+  const cross = (o: Point, a: Point, b: Point) =>
+    (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower: Point[] = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2]!, lower[lower.length - 1]!, p) <= 0)
+      lower.pop();
+    lower.push(p);
+  }
+  const upper: Point[] = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i]!;
+    while (upper.length >= 2 && cross(upper[upper.length - 2]!, upper[upper.length - 1]!, p) <= 0)
+      upper.pop();
+    upper.push(p);
+  }
+  lower.pop();
+  upper.pop();
+  return lower.concat(upper);
+}
+
+/** Push each hull vertex outward from the centroid so land wraps the nodes. */
+function expand(points: Point[], pad: number): Point[] {
+  const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
+  const cy = points.reduce((s, p) => s + p.y, 0) / points.length;
+  return points.map((p) => {
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    const len = Math.hypot(dx, dy) || 1;
+    return { x: p.x + (dx / len) * pad, y: p.y + (dy / len) * pad };
+  });
+}
+
+/** Smooth closed path through the points (quadratic curves via edge midpoints). */
+function smoothClosedPath(points: Point[]): string {
+  const n = points.length;
+  if (n < 3) return "";
+  const mid = (a: Point, b: Point) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  const start = mid(points[n - 1]!, points[0]!);
+  let d = `M ${start.x.toFixed(1)} ${start.y.toFixed(1)}`;
+  for (let i = 0; i < n; i++) {
+    const cur = points[i]!;
+    const m = mid(cur, points[(i + 1) % n]!);
+    d += ` Q ${cur.x.toFixed(1)} ${cur.y.toFixed(1)} ${m.x.toFixed(1)} ${m.y.toFixed(1)}`;
+  }
+  return `${d} Z`;
+}
+
+/**
+ * Stylized landmass silhouette per continent, generated from its territory
+ * node positions — a world-map backdrop with no external image asset.
+ */
+export const CONTINENT_PATHS: Record<ContinentCode, string> = (() => {
+  const out = {} as Record<ContinentCode, string>;
+  for (const code of CONTINENT_CODES) {
+    const points = CONTINENTS[code].territories.map((t) => POSITIONS[t]);
+    out[code] = smoothClosedPath(expand(convexHull(points), 46));
+  }
+  return out;
+})();
 
 /** Each adjacency once. The Alaska–Kamchatka pacific link is special-cased. */
 export const EDGES: [TerritoryCode, TerritoryCode][] = (() => {

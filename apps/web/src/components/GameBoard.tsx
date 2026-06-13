@@ -11,7 +11,10 @@ import { useRef, useState } from "react";
 import type { PointerEvent, WheelEvent } from "react";
 import {
   CONTINENT_LABELS,
+  CONTINENT_PATHS,
   EDGES,
+  LAND_FILL,
+  LAND_STROKE,
   MAP_HEIGHT,
   MAP_ORIGIN_X,
   MAP_ORIGIN_Y,
@@ -19,6 +22,7 @@ import {
   PLAYER_COLOR_HEX,
   POSITIONS,
 } from "@/lib/mapLayout";
+import { CONTINENT_CODES } from "@risk2/engine";
 import type { PlayerView } from "@/lib/redact";
 
 export type Highlight = "selected" | "source" | "target";
@@ -34,9 +38,9 @@ export interface GameBoardProps {
 }
 
 const HIGHLIGHT_STYLE: Record<Highlight, { stroke: string; dash?: string; width: number }> = {
-  selected: { stroke: "#ffffff", width: 3.5 },
-  source: { stroke: "#d4a843", width: 2.5 },
-  target: { stroke: "#e5484d", dash: "5 3", width: 3 },
+  selected: { stroke: "#e8e2d2", width: 3.5 },
+  source: { stroke: "#b59a5e", width: 2.5 },
+  target: { stroke: "#b56a5a", dash: "5 3", width: 3 },
 };
 
 export function GameBoard({
@@ -102,6 +106,21 @@ export function GameBoard({
       onPointerLeave={onPointerUp}
       data-testid="game-board"
     >
+      {/* world-map landmasses (backdrop, generated from node clusters) */}
+      <g pointerEvents="none">
+        {CONTINENT_CODES.map((code) => (
+          <path
+            key={code}
+            d={CONTINENT_PATHS[code]}
+            fill={LAND_FILL}
+            stroke={LAND_STROKE}
+            strokeWidth={1.5}
+            strokeLinejoin="round"
+            opacity={0.9}
+          />
+        ))}
+      </g>
+
       {/* continent labels */}
       {Object.values(CONTINENT_LABELS).map((c) => (
         <text
